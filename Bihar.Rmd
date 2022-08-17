@@ -1,0 +1,351 @@
+---
+title: "bihar TV penetration"
+output:
+  html_document: default
+  pdf_document: default
+date: '2022-07-21'
+---
+
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+knitr::opts_knit$set(root.dir="C:\\Users\\AG\\Desktop\\TV penetration in Bihar and Gujarat\\Bihar")
+
+```
+
+```{r,echo=F,eval=TRUE,warning=FALSE,message=FALSE}
+library(car)
+library(caret)
+library(nortest)
+library(flextable)
+library(officer)
+library(dplyr)
+library(corrgram)
+library(data.table)
+library(ggplot2)
+```
+
+### Background: The data has 44098 cases for state Bihar where each case is a area in the state. The “percentage of households having TV” is a target variable. The data has many other variables related to condition of houses, ownership status,facilities etc.which can influence the TV penetration in the specific area.
+### The objective is to identify significant factors affecting TV penetration.
+
+
+&nbsp;
+&nbsp;
+&nbsp;
+
+
+#### Data Description
+```{r,warning=FALSE,message=FALSE,echo=F,eval=TRUE,ft.align="left",comment=""}
+
+datadesc<-data.frame(liv_house="Percentage of total houses having livable condition",
+                     owned="Percentage of owned houses ",
+                     elect_light="Percentage of houses having main source of light as electricity",
+                     lat_inprem="Percentage of houses having latrine facility",
+                     perm="Percentag of permanent houses",
+                     atlone_rm="Percentage of houses having atleast one dwelling room",
+                     atlthr_mem="Percentage of houses having atleast three members",
+                     atlone_cou="Percentage of houses having atleast one couple",
+                     bath="Percentage of houses having bathroom with or without roof",
+                     kitchen="Percentage of houses having kitchen inside or outside house")
+datadesc<-as.data.frame.matrix(t(datadesc))
+datadesc$Col<-row.names(datadesc)
+datadesc<-datadesc[,2:1]
+names(datadesc)<-c("Column name","Column description")
+
+
+std_border = fp_border(color="black", width = 1)
+datadesc %>% flextable() %>% 
+  border_inner(border = std_border) %>%
+  border_outer(border = std_border) %>%
+  bold(bold = T,part = "header") %>%
+  autofit()
+```
+
+
+#### Import data of Bihar state combining all 38 districts
+
+```{r,warning=FALSE,message=FALSE,echo=TRUE,eval=TRUE,ft.align="left",comment=""}
+library(readxl)
+data=read_excel("Araria filtered.xlsx")
+
+data.files = list.files(pattern = "*.xlsx")
+
+i=2
+lst<-list()
+for (i in 2:length(data.files)) {
+  lst[[i]]<- read_excel(data.files[i],skip=6)
+  names(lst[[i]])<-names(data)
+}                                 
+
+lst2<-lst[lapply(lst,length)>0]
+
+bihardata<-do.call(rbind,lst2)
+bihardata<-rbind(data,bihardata)
+head(data.frame(bihardata))
+```
+
+
+#### Creating columns atlone_rm by adding columns one room and above, atlthr_mem by adding columns three members and above , atlone_cou by adding columns one couple and above , bath by adding columns bathroom with roof and without roof, kitchen by adding columns cooking inside and outside house 
+
+```{r,warning=FALSE,message=FALSE,echo=TRUE,eval=TRUE,ft.align="left",comment=""}
+bihardata$atlone_rm=rowSums(bihardata[,c("one_rm","two_ rm","thr_rm","four_rm","five_rm","msix_rm")])
+
+
+bihardata$atlthr_mem=rowSums(bihardata[,c("thr_mem","four_mem","five_mem","sixeig_mem","mnine_mem")])
+
+
+bihardata$atlone_cou=rowSums(bihardata[,c("one_cou","two_cou","thr_cou","four_cou","mfive_cou")])
+
+
+bihardata$bath=rowSums(bihardata[,c("y_bath","yn_bath")])
+
+bihardata$kitchen=rowSums(bihardata[,c("yin_kit","yout_kit")])
+
+```
+
+#### Identify the variables and produce correlation matrix
+```{r,warning=FALSE,message=FALSE,echo=TRUE,eval=TRUE,ft.align="left",comment=""}
+library(reshape2)
+cormat <- round(cor(bihardata[,c("liv_house","owned","elect_light","lat_inprem","perm","atlone_rm","atlthr_mem","atlone_cou","bath","kitchen","tv")]),2)
+melted_cormat <- melt(cormat)
+
+ggplot(data = melted_cormat, aes(x=Var1, y=Var2, fill=value)) + 
+  geom_tile()+
+  geom_text(aes(Var2, Var1, label = value), color = "black", size = 4)+
+  scale_fill_gradient2(low="red",mid="white",high="blue")
+
+```
+
+#### Split original data into training and testing data sets for Bihar state
+```{r,warning=FALSE,message=FALSE,echo=TRUE,eval=TRUE,ft.align="left",comment=""}
+index<-createDataPartition(bihardata$tv,p=0.8,list=FALSE) 
+
+traindata<-bihardata[index,]
+testdata<-bihardata[-index,]   
+
+```
+
+#### Linear Regression using lm function
+
+```{r,warning=FALSE,message=FALSE,echo=TRUE,eval=TRUE,ft.align="left",comment=""}
+hp_model<-lm(tv~liv_house+owned+elect_light+lat_inprem+perm+atlone_rm+atlthr_mem+atlone_cou+bath+kitchen,data=traindata)  
+```
+
+#### Display parameter estimates with other model statistics
+```{r,warning=FALSE,message=FALSE,echo=TRUE,eval=TRUE,ft.align="left",comment=""}
+summary(hp_model)
+```
+
+#### Comment:"atlone_rm" and "atlone_cou" are insignificant variables
+#### The model explains 70% of variation in dependent variable
+
+&nbsp;
+&nbsp;
+
+#### Check for multicollinearity using vif function
+```{r,warning=FALSE,message=FALSE,echo=TRUE,eval=TRUE,ft.align="left",comment=""}
+vif(hp_model)
+```
+
+#### Comment : As all VIF's are less than 5 ,Multicollinearity is not present in a model
+
+&nbsp;
+
+#### Plot of Residuals vs Predicted values
+
+```{r,warning=FALSE,message=FALSE,echo=TRUE,eval=TRUE,ft.align="left",comment=""}
+traindata$fit<-fitted(hp_model)
+traindata$resi<-residuals(hp_model)
+plot(traindata$fit,traindata$resi) 
+```
+
+#### Comment: It is observed that residuals are randomly distributed and uncorelated with predicted values
+
+&nbsp;
+&nbsp;
+
+#### Check if distribution of errors is "NORMAL"
+```{r,warning=FALSE,message=FALSE,echo=TRUE,eval=TRUE,ft.align="left",comment=""}
+qqnorm(traindata$resi) 
+```
+
+```{r,warning=FALSE,message=FALSE,echo=TRUE,eval=TRUE,ft.align="left",comment=""}
+lillie.test(traindata$resi)
+```
+
+#### Comment: Although normality of errors is not established we will proceed to evaluate the model performance
+&nbsp;
+
+#### Rerun the model after removing the insignificant variables
+
+```{r,warning=FALSE,message=FALSE,echo=TRUE,eval=TRUE,ft.align="left",comment=""}
+hp_model2<-lm(tv~liv_house+owned+elect_light+lat_inprem+perm+atlthr_mem+bath+kitchen,data=traindata) 
+summary(hp_model2)
+```
+
+
+#### Calculate RMSE values based on residuals using first principle
+```{r,warning=FALSE,message=FALSE,echo=TRUE,eval=TRUE,ft.align="left",comment=""}
+traindata$resi<-residuals(hp_model2)
+
+RMSE<-sqrt(mean(traindata$resi**2))
+RMSE
+```
+#### Model Validation: Holdout Method using RMSE
+
+```{r,warning=FALSE,message=FALSE,echo=TRUE,eval=TRUE,ft.align="left",comment=""}
+testdata$pred<-predict(hp_model2,testdata)
+testdata$res<-(testdata$tv-testdata$pred)
+RMSEtest<-sqrt(mean(testdata$res**2))
+RMSEtest
+```
+
+#### Comment: RMSE values for train and test data are similar hence the model can be implemented for decision making for Bihar state
+
+&nbsp;
+&nbsp;
+
+#### Converting continuous variables into categorical variables by using quantile function
+
+```{r,warning=FALSE,message=FALSE,echo=T,eval=TRUE,ft.align="left",comment=""}
+bihardata$TV<-cut(bihardata$tv,quantile(bihardata$tv),include.lowest=TRUE,labels=c("very low","low","moderate","high"))
+bihardata$livable<-cut(bihardata$liv_house,quantile(bihardata$liv_house),include.lowest=TRUE,labels=c("very low","low","moderate","high"))
+
+bihardata$owner <- as.factor(ntile(bihardata$owned, 4))
+levels(bihardata$owner) <- c("very low","low","moderate","high")
+
+bihardata$electr <- as.factor(ntile(bihardata$elect_light, 4))
+levels(bihardata$electr) <- c("very low","low","moderate","high")
+
+bihardata$latrine<-cut(bihardata$lat_inprem,quantile(bihardata$lat_inprem),include.lowest=TRUE,labels=c("very low","low","moderate","high"))
+bihardata$perman<-cut(bihardata$perm,quantile(bihardata$perm),include.lowest=TRUE,labels=c("very low","low","moderate","high"))
+bihardata$membr<-cut(bihardata$atlthr_mem,quantile(bihardata$atlthr_mem),include.lowest=TRUE,labels=c("very low","low","moderate","high"))
+bihardata$bathrm<-cut(bihardata$bath,quantile(bihardata$bath),include.lowest=TRUE,labels=c("very low","low","moderate","high"))
+bihardata$kit<-cut(bihardata$kitchen,quantile(bihardata$kitchen),include.lowest=TRUE,labels=c("very low","low","moderate","high"))
+
+bihar1=data.frame(bihardata$TV,bihardata$livable,bihardata$owner,bihardata$electr,bihardata$latrine,bihardata$perman,bihardata$membr,bihardata$bathrm,bihardata$kit)
+names(bihar1)=c("TV","livable","owner","electr","latrine","perman","membr","bathrm","kit")
+
+lst<-list()
+i=1
+for (i in 1:8){
+ 
+  a<-as.data.frame.matrix(table(bihar1$TV,bihar1[,i+1]))
+  a2<-as.data.frame.matrix(round(prop.table(table(bihar1$TV,bihar1[,i+1]))*100,2))
+  for (j in 1:4){
+    a[,j]<-paste(a[,j]," (",a2[,j],"%)",sep = "")
+  }
+  a$New<-c("very low","low","moderate","high")
+  
+  a<-a[,c(5,1:4)]
+  names(a)[1]<-paste("TV & ",names(bihar1)[i+1],sep = "")
+  lst[[i]]<-a
+  names(lst)[i]<-names(bihar1)[i+1]
+  
+}
+
+std_border = fp_border(color="black", width = 1)
+lst[[1]] %>% flextable() %>% 
+  set_caption(caption = "TV vs liv_house",autonum = NULL,
+  style = "Table Caption",
+  html_escape = TRUE) %>%
+  border_inner(border = std_border) %>%
+  border_outer(border = std_border) %>%
+  bold(bold = T,part = "header") %>%
+  autofit()
+
+lst[[2]] %>% flextable() %>% 
+  set_caption(caption = "TV vs Owned",autonum = NULL,
+  style = "Table Caption",
+  html_escape = TRUE) %>% 
+  border_inner(border = std_border) %>%
+  border_outer(border = std_border) %>%
+  bold(bold = T,part = "header") %>%
+  autofit()
+
+lst[[3]] %>% flextable() %>% 
+  set_caption(caption = "TV vs elect_light",autonum = NULL,
+  style = "Table Caption",
+  html_escape = TRUE) %>% 
+  border_inner(border = std_border) %>%
+  border_outer(border = std_border) %>%
+  bold(bold = T,part = "header") %>%
+  autofit()
+
+lst[[4]] %>% flextable() %>% 
+  set_caption(caption = "TV vs lat_inprem",autonum = NULL,
+  style = "Table Caption",
+  html_escape = TRUE)  %>%
+  border_inner(border = std_border) %>%
+  border_outer(border = std_border) %>%
+  bold(bold = T,part = "header") %>%
+  autofit()
+
+lst[[5]] %>% flextable() %>% 
+  set_caption(caption = "TV vs perm",autonum = NULL,
+  style = "Table Caption",
+  html_escape = TRUE) %>%
+  border_inner(border = std_border) %>%
+  border_outer(border = std_border) %>%
+  bold(bold = T,part = "header") %>%
+  autofit()
+
+lst[[6]] %>% flextable() %>% 
+  set_caption(caption = "TV vs atlthr_mem",autonum = NULL,
+  style = "Table Caption",
+  html_escape = TRUE) %>%
+  border_inner(border = std_border) %>%
+  border_outer(border = std_border) %>%
+  bold(bold = T,part = "header") %>%
+  autofit()
+
+lst[[7]] %>% flextable() %>% 
+  set_caption(caption = "TV vs bath",autonum = NULL,
+  style = "Table Caption",
+  html_escape = TRUE) %>%
+  border_inner(border = std_border) %>%
+  border_outer(border = std_border) %>%
+  bold(bold = T,part = "header") %>%
+  autofit()
+
+lst[[8]] %>% flextable() %>% 
+  set_caption(caption = "TV vs kitchen",autonum = NULL,
+  style = "Table Caption",
+  html_escape = TRUE) %>%
+  border_inner(border = std_border) %>%
+  border_outer(border = std_border) %>%
+  bold(bold = T,part = "header") %>%
+  autofit()
+
+```
+
+#### Plot quantiles of independent variables against high values of TV penetration
+```{r,warning=FALSE,message=FALSE,echo=T,eval=TRUE,ft.align="left",comment=""}
+lst2<-list()
+i=1
+for (i in 1:8){
+  a<-as.data.frame.matrix(table(bihar1$TV,bihar1[,i+1]))
+  a$New<-row.names(a)
+  try<-subset(a,a$New=="high",select = c("very low","low","moderate","high"))
+  try$new<-names(lst)[i]
+  lst2[[i]]<-try
+}
+
+trydata<-do.call(rbind,lst2)
+
+library(reshape2)
+trydata<-melt(trydata)
+names(trydata)<-c("Variable","Quantile","Value")
+
+library(plyr)
+trydata = ddply(trydata, .(Variable), transform, percent = Value/sum(Value) * 100)
+trydata$label = paste(round(trydata$percent,2), "%",sep = "")
+
+library(ggplot2)
+ggplot(trydata, aes(fill=Quantile, y=Value, x=Variable,label=Value)) + 
+  geom_bar(position="stack", stat="identity")+
+  geom_text(aes(label=label),size = 3, position = position_stack(vjust = 0.5))
+
+
+```
+

@@ -1,0 +1,353 @@
+---
+title: "Gujrat TV penetration"
+output: html_document
+date: '2022-07-20'
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r,echo=F,eval=TRUE,warning=FALSE,message=FALSE}
+library(car)
+library(caret)
+library(nortest)
+library(flextable)
+library(officer)
+library(dplyr)
+library(corrgram)
+library(data.table)
+library(ggplot2)
+```
+
+
+### Background: The data has 20890 cases for Gujarat where each case is a area in the state. The “percentage of households having TV” is target variable. The data has many other variables related to condition of houses, ownership status,facilities etc.which can influence the TV penetration in the specific area.
+### The objective is to identify significant factors affecting TV penetration.
+
+
+&nbsp;
+&nbsp;
+&nbsp;
+
+#### Data Description
+```{r,warning=FALSE,message=FALSE,echo=F,eval=TRUE,ft.align="left",comment=""}
+
+datadesc<-data.frame(liv_house="Percentage of total houses having livable condition",
+                     owned="Percentage of owned houses ",
+                     elect_light="Percentage of houses having main source of light as electricity",
+                     lat_inprem="Percentage of houses having latrine facility",
+                     perm="Percentag of permanent houses",
+                     atlone_rm="Percentage of houses having atleast one dwelling room",
+                     atlthr_mem="Percentage of houses having atleast three members",
+                     atlone_cou="Percentage of houses having atleast one couple",
+                     bath="Percentage of houses having bathroom with or without roof",
+                     kitchen="Percentage of houses having kitchen inside or outside house")
+datadesc<-as.data.frame.matrix(t(datadesc))
+datadesc$Col<-row.names(datadesc)
+datadesc<-datadesc[,2:1]
+names(datadesc)<-c("Column name","Column description")
+
+
+std_border = fp_border(color="black", width = 1)
+datadesc %>% flextable() %>% 
+  border_inner(border = std_border) %>%
+  border_outer(border = std_border) %>%
+  bold(bold = T,part = "header") %>%
+  autofit()
+```
+
+
+#### Import data of Gujarat state combining all 26 districts
+```{r,warning=FALSE,message=FALSE,echo=TRUE,eval=TRUE,ft.align="left",comment=""}
+library(readxl)
+data=read_excel("C:\\Users\\AG\\Desktop\\TV penetration in Bihar and Gujarat\\Bihar\\Araria filtered.xlsx")
+
+data.files = list.files(pattern = "*.xlsx")
+
+i=1
+lst<-list()
+for (i in 1:length(data.files)) {
+  lst[[i]]<- read_excel(data.files[i],skip=6)
+  names(lst[[i]])<-names(data)
+}                         
+
+lst2<-lst[lapply(lst,length)>0]
+gujdata<-do.call(rbind,lst2)
+head(data.frame(gujdata))
+```
+
+
+#### Creating columns atlone_rm by adding columns one room and above, atlthr_mem by adding columns three members and above , atlone_cou by adding columns one couple and above , bath by adding columns bathroom with roof and without roof, kitchen by adding columns cooking inside and outside house 
+
+```{r,warning=FALSE,message=FALSE,echo=TRUE,eval=TRUE,ft.align="left",comment=""}
+
+gujdata$atlone_rm=rowSums(gujdata[,c("one_rm","two_ rm","thr_rm","four_rm","five_rm","msix_rm")])
+
+
+gujdata$atlthr_mem=rowSums(gujdata[,c("thr_mem","four_mem","five_mem","sixeig_mem","mnine_mem")])
+
+
+gujdata$atlone_cou=rowSums(gujdata[,c("one_cou","two_cou","thr_cou","four_cou","mfive_cou")])
+
+gujdata$bath=rowSums(gujdata[,c("y_bath","yn_bath")])
+
+gujdata$kitchen=rowSums(gujdata[,c("yin_kit","yout_kit")])
+
+```
+
+
+#### Identify the variables and produce correlation matrix
+```{r,warning=FALSE,message=FALSE,echo=TRUE,eval=TRUE,ft.align="left",comment=""}
+cormat1 <- round(cor(gujdata[,c("liv_house","owned","elect_light","lat_inprem","perm","atlone_rm","atlthr_mem","atlone_cou","bath","kitchen","tv")]),2)
+melted_cormat <- melt(cormat1)
+
+ggplot(data = melted_cormat, aes(x=Var1, y=Var2, fill=value)) + 
+  geom_tile()+
+  geom_text(aes(Var2, Var1, label = value), color = "black", size = 4)+
+  scale_fill_gradient2(low="red",mid="white",high="blue")
+```
+
+
+#### Split original data into training and testing data sets for Gujrat state
+```{r,warning=FALSE,message=FALSE,echo=TRUE,eval=TRUE,ft.align="left",comment=""}
+index1<-createDataPartition(gujdata$tv,p=0.8,list=FALSE) 
+
+traindata1<-gujdata[index1,]
+testdata1<-gujdata[-index1,] 
+```
+#### Linear Regression using lm function
+
+```{r,warning=FALSE,message=FALSE,echo=TRUE,eval=TRUE,ft.align="left",comment=""}
+hp_model1<-lm(tv~liv_house+owned+elect_light+lat_inprem+perm+atlone_rm+atlthr_mem+atlone_cou+bath+kitchen,data=traindata1) 
+```
+#### Display parameter estimates with other model statistics
+```{r,warning=FALSE,message=FALSE,echo=TRUE,eval=TRUE,ft.align="left",comment=""}
+summary(hp_model1)
+```
+
+#### Comment: All variables are significant
+#### The model explains 70% of variation in dependent variable
+
+&nbsp;
+&nbsp;
+
+#### Check for multicollinearity using vif function
+```{r,warning=FALSE,message=FALSE,echo=TRUE,eval=TRUE,ft.align="left",comment=""}
+vif(hp_model1)
+```
+
+#### Comment : As all VIF's are less than 5 ,Multicollinearity is not present in a model
+
+&nbsp;
+
+#### Plot of Residuals vs Predicted values
+
+```{r,warning=FALSE,message=FALSE,echo=TRUE,eval=TRUE,ft.align="left",comment=""}
+traindata1$fit<-fitted(hp_model1)
+traindata1$resi<-residuals(hp_model1)
+plot(traindata1$fit,traindata1$resi) 
+```
+
+#### Comment: It is observed that residuals are randomly distributed and uncorelated with predicted values
+
+&nbsp;
+&nbsp;
+
+#### Check if distribution of errors is "NORMAL"
+```{r,warning=FALSE,message=FALSE,echo=TRUE,eval=TRUE,ft.align="left",comment=""}
+qqnorm(traindata1$resi) 
+```
+
+```{r,warning=FALSE,message=FALSE,echo=TRUE,eval=TRUE,ft.align="left",comment=""}
+lillie.test(traindata1$resi)
+```
+
+#### Comment: Although normality of errors is not established we will proceed to evaluate the model performance
+
+&nbsp;
+
+#### Calculate RMSE values based on residuals using first principle
+
+```{r,warning=FALSE,message=FALSE,echo=TRUE,eval=TRUE,ft.align="left",comment=""}
+traindata1$resi<-residuals(hp_model1)
+
+RMSE1<-sqrt(mean(traindata1$resi**2))
+RMSE1
+
+```
+
+#### Model Validation: Holdout Method using RMSE
+
+```{r,warning=FALSE,message=FALSE,echo=TRUE,eval=TRUE,ft.align="left",comment=""}
+testdata1$pred<-predict(hp_model1,testdata1)
+testdata1$res<-(testdata1$tv-testdata1$pred)
+RMSEtest1<-sqrt(mean(testdata1$res**2))
+RMSEtest1
+
+```
+
+#### Comment: RMSE values for train and test data are similar hence the model can be implemented for decision making for Gujarat state
+
+&nbsp;
+&nbsp;
+
+#### Converting continuous variables into categorical variables by using quantile function
+```{r,warning=FALSE,message=FALSE,echo=T,eval=TRUE,ft.align="left",comment=""}
+gujdata$TV<-cut(gujdata$tv,quantile(gujdata$tv),include.lowest=TRUE,labels=c("very low","low","moderate","high"))
+gujdata$livable<-cut(gujdata$liv_house,quantile(gujdata$liv_house),include.lowest=TRUE,labels=c("very low","low","moderate","high"))
+gujdata$owner<-cut(gujdata$owned,quantile(gujdata$owned),include.lowest=TRUE,labels=c("very low","low","moderate","high"))
+gujdata$electr<-cut(gujdata$elect_light,quantile(gujdata$elect_light),include.lowest=TRUE,labels=c("very low","low","moderate","high"))
+gujdata$latrine<-cut(gujdata$lat_inprem,quantile(gujdata$lat_inprem),include.lowest=TRUE,labels=c("very low","low","moderate","high"))
+gujdata$perman<-cut(gujdata$perm,quantile(gujdata$perm),include.lowest=TRUE,labels=c("very low","low","moderate","high"))
+gujdata$room<-cut(gujdata$atlone_rm,quantile(gujdata$atlone_rm),include.lowest=TRUE,labels=c("very low","low","moderate","high"))
+gujdata$membr<-cut(gujdata$atlthr_mem,quantile(gujdata$atlthr_mem),include.lowest=TRUE,labels=c("very low","low","moderate","high"))
+gujdata$couple<-cut(gujdata$atlone_cou,quantile(gujdata$atlone_cou),include.lowest=TRUE,labels=c("very low","low","moderate","high"))
+gujdata$bathrm<-cut(gujdata$bath,quantile(gujdata$bath),include.lowest=TRUE,labels=c("very low","low","moderate","high"))
+gujdata$kit<-cut(gujdata$kitchen,quantile(gujdata$kitchen),include.lowest=TRUE,labels=c("very low","low","moderate","high"))
+
+gujrat1=data.frame(gujdata$TV,gujdata$livable,gujdata$owner,gujdata$electr,gujdata$latrine,gujdata$perman,gujdata$room,gujdata$membr,gujdata$couple,gujdata$bathrm,gujdata$kit)
+names(gujrat1)=c("TV","livable","owner","electr","latrine","perman","room","membr","couple","bathrm","kit")
+
+lst1<-list()
+i=1
+for (i in 1:10){
+  a<-as.data.frame.matrix(table(gujrat1$TV,gujrat1[,i+1]))
+  a2<-as.data.frame.matrix(round(prop.table(table(gujrat1$TV,gujrat1[,i+1]))*100,2))
+  for (j in 1:4){
+    a[,j]<-paste(a[,j]," (",a2[,j],"%)",sep = "")
+  }
+  a$New<-c("very low","low","moderate","high")
+  
+  a<-a[,c(5,1:4)]
+  names(a)[1]<-paste("TV & ",names(gujrat1)[i+1],sep = "")
+  names(a)[2:5]<-c("very low","low","moderate","high")
+  lst1[[i]]<-a
+  names(lst1)[i]<-names(gujrat1)[i+1]
+  
+}
+
+std_border = fp_border(color="black", width = 1)
+lst1[[1]] %>% flextable() %>% 
+  set_caption(caption = "TV vs liv_house",autonum = NULL,
+  style = "Table Caption",
+  html_escape = TRUE) %>%
+  border_inner(border = std_border) %>%
+  border_outer(border = std_border) %>%
+  bold(bold = T,part = "header") %>%
+  autofit()
+
+lst1[[2]] %>% flextable() %>% 
+  set_caption(caption = "TV vs owned",autonum = NULL,
+  style = "Table Caption",
+  html_escape = TRUE) %>%
+  border_inner(border = std_border) %>%
+  border_outer(border = std_border) %>%
+  bold(bold = T,part = "header") %>%
+  autofit()
+
+lst1[[3]] %>% flextable() %>% 
+  set_caption(caption = "TV vs elect_light",autonum = NULL,
+  style = "Table Caption",
+  html_escape = TRUE) %>%
+  border_inner(border = std_border) %>%
+  border_outer(border = std_border) %>%
+  bold(bold = T,part = "header") %>%
+  autofit()
+
+lst1[[4]] %>% flextable() %>% 
+  set_caption(caption = "TV vs lat_inprem",autonum = NULL,
+  style = "Table Caption",
+  html_escape = TRUE) %>%
+  border_inner(border = std_border) %>%
+  border_outer(border = std_border) %>%
+  bold(bold = T,part = "header") %>%
+  autofit()
+
+lst1[[5]] %>% flextable() %>% 
+  set_caption(caption = "TV vs perm",autonum = NULL,
+  style = "Table Caption",
+  html_escape = TRUE) %>%
+  border_inner(border = std_border) %>%
+  border_outer(border = std_border) %>%
+  bold(bold = T,part = "header") %>%
+  autofit()
+
+lst1[[6]] %>% flextable() %>% 
+  set_caption(caption = "TV vs atlone_rm",autonum = NULL,
+  style = "Table Caption",
+  html_escape = TRUE) %>%
+  border_inner(border = std_border) %>%
+  border_outer(border = std_border) %>%
+  bold(bold = T,part = "header") %>%
+  autofit()
+
+lst1[[7]] %>% flextable() %>% 
+  set_caption(caption = "TV vs atlthr_mem",autonum = NULL,
+  style = "Table Caption",
+  html_escape = TRUE) %>%
+  border_inner(border = std_border) %>%
+  border_outer(border = std_border) %>%
+  bold(bold = T,part = "header") %>%
+  autofit()
+
+lst1[[8]] %>% flextable() %>% 
+  set_caption(caption = "TV vs atlone_cou",autonum = NULL,
+  style = "Table Caption",
+  html_escape = TRUE) %>%
+  border_inner(border = std_border) %>%
+  border_outer(border = std_border) %>%
+  bold(bold = T,part = "header") %>%
+  autofit()
+
+lst1[[9]] %>% flextable() %>% 
+  set_caption(caption = "TV vs bath",autonum = NULL,
+  style = "Table Caption",
+  html_escape = TRUE) %>%
+  border_inner(border = std_border) %>%
+  border_outer(border = std_border) %>%
+  bold(bold = T,part = "header") %>%
+  autofit()
+
+lst1[[10]] %>% flextable() %>% 
+  set_caption(caption = "TV vs kitchen",autonum = NULL,
+  style = "Table Caption",
+  html_escape = TRUE) %>%
+  border_inner(border = std_border) %>%
+  border_outer(border = std_border) %>%
+  bold(bold = T,part = "header") %>%
+  autofit()
+
+```
+
+### Plot quantiles of independent variables against high values of TV penetration
+
+```{r,warning=FALSE,message=FALSE,echo=T,eval=TRUE,ft.align="left",comment=""}
+lst3<-list()
+i=1
+for (i in 1:10){
+  a1<-as.data.frame.matrix(table(gujrat1$TV,gujrat1[,i+1]))
+  a1$New<-row.names(a1)
+  try1<-subset(a1,a1$New=="high",select = c("very low","low","moderate","high"))
+  try1$new<-names(lst1)[i]
+  lst3[[i]]<-try1
+}
+
+trydata1<-do.call(rbind,lst3)
+
+library(reshape2)
+trydata1<-melt(trydata1)
+names(trydata1)<-c("Variable","Quantile","Value")
+
+library(plyr)
+trydata1 = ddply(trydata1, .(Variable), transform, percent = Value/sum(Value) * 100)
+trydata1$label = paste(round(trydata1$percent,2), "%",sep = "")
+
+library(ggplot2)
+ggplot(trydata1, aes(fill=Quantile, y=Value, x=Variable,label=Value)) + 
+  geom_bar(position="stack", stat="identity")+
+  geom_text(aes(label=label),size = 3, position = position_stack(vjust = 0.5))
+
+
+```
+
+```
